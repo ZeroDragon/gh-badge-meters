@@ -160,6 +160,13 @@ def center_text(text, y):
     screen.text(text, (screen.width - width) // 2, y)
 
 
+def low_blink_on():
+    """Fase encendida del parpadeo de batería baja (alterna cada 0.5 s)."""
+    # badge.ticks (ms desde boot) en vez de time.time(): en el hardware el
+    # reloj de pared puede estar congelado sin NTP y el blink no alternaría
+    return (badge.ticks // 500) % 2 == 0
+
+
 # -----------------------------------------------------------------------------
 # Pantallas 1-3: batería horizontal grande
 # -----------------------------------------------------------------------------
@@ -195,9 +202,13 @@ def draw_battery_screen(index):
     screen.pen = BACKGROUND
     screen.rectangle(x + 6, y + 6, 244, 78)     # interior (borde de 6px)
 
-    # 10 celdas de izquierda a derecha; se llenan según level // 10
+    # 10 celdas de izquierda a derecha; se llenan según level // 10.
+    # Con 10% o menos, la celda encendida parpadea rojo/apagado.
+    fill = energy
+    if level <= 10 and not low_blink_on():
+        fill = EMPTY
     for cell in range(10):
-        screen.pen = energy if cell < level // 10 else EMPTY
+        screen.pen = fill if cell < level // 10 else EMPTY
         screen.rectangle(x + 12 + cell * 24, y + 12, 20, 66)
 
     # Porcentaje: parche del color de fondo para "tapar" las celdas de atrás
@@ -303,9 +314,13 @@ def draw_overview():
         screen.rectangle(bx + 3, 33, 60, 140)       # interior (borde de 3px)
 
         # 10 celdas apiladas: cell 0 es la de abajo (161 = fondo del interior);
-        # la batería se llena de abajo hacia arriba igual que la horizontal
+        # la batería se llena de abajo hacia arriba igual que la horizontal.
+        # Con 10% o menos, la celda encendida parpadea rojo/apagado.
+        fill = energy
+        if level <= 10 and not low_blink_on():
+            fill = EMPTY
         for cell in range(10):
-            screen.pen = energy if cell < level // 10 else EMPTY
+            screen.pen = fill if cell < level // 10 else EMPTY
             screen.rectangle(bx + 6, 161 - cell * 14, 54, 12)
 
         # Icono identificador bajo cada batería (chat / taza / luna)
