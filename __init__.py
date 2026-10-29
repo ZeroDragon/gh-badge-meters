@@ -7,12 +7,18 @@
 #   3) REST LEVEL      — nivel de descanso
 #   4) OVERVIEW        — las 3 baterías verticales con su % (chat / taza / luna)
 #
-# En las pantallas 1-3, UP suma +10 y DOWN resta -10 al nivel actual.
-# Los niveles se guardan de forma persistente con State.save().
+# En las pantallas 1-3:
+#   UP / DOWN      ajustan el nivel en pasos de 10
+#   SELECT         cicla la cadencia 0 -> 1 -> ... -> 10 -> 0
+#
+# La cadencia son las horas en que la batería llega a 0 (drena -10% cada
+# cadence*6 min); 0 = sin cadencia. Ajustar el nivel o la cadencia reinicia
+# el contador de tiempo de esa batería. Todo persiste con State.save().
 # =============================================================================
 
 import os
 import sys
+import time
 
 # El launcher ejecuta cada app dentro de su propio directorio en /system/apps.
 # En el simulador ese directorio puede no existir, por eso el try/except.
@@ -50,15 +56,44 @@ LEVEL_COLORS = (
 # -----------------------------------------------------------------------------
 # Estado persistente
 # -----------------------------------------------------------------------------
-# Se guarda en el almacén de State bajo la clave "devlvls". Si algún valor
-# viene corrupto (no int, fuera de 0-100 o no múltiplo de 10), se resetea a 60.
-state = {"social": 60, "coffee": 60, "rest": 60}
+# Se guarda en el almacén de State bajo la clave "devlvls":
+#   social/coffee/rest : nivel actual (0-100, múltiplos de 10)
+#   cadence            : horas en que cada batería llega a 0 (0 = sin cadencia)
+#   decay_level        : nivel base cuando se reinició el contador de cadencia
+#   decay_epoch        : time.time() de ese reinicio (base para el drenaje)
+state = {
+    "social": 60, "coffee": 60, "rest": 60,
+    "cadence": {}, "decay_level": {}, "decay_epoch": {},
+}
 State.load("devlvls", state)
-for key in ("social", "coffee", "rest"):
-    value = state[key]
+
+# Claves de nivel en el orden de las pantallas 1-3; para indexar con screen_index
+STATE_KEYS = ("social", "coffee", "rest")
+
+# Validación de lo guardado: niveles válidos, cadencia 0-10 y un contador de
+# cadencia coherente (si algo viene corrupto o falta, se resetea).
+now = time.time()
+for key in STATE_KEYS:
+    value = state.get(key)
     if type(value) is not int or value < 0 or value > 100 or value % 10:
-        print("Dev Levels: invalid saved %s level; resetting to 60" % key)
+        if value is not None:
+            print("Dev Levels: invalid saved %s level; resetting to 60" % key)
         state[key] = 60
+
+    cadence = state["cadence"].get(key, 0)
+    if type(cadence) is not int or cadence < 0 or cadence > 10:
+        cadence = 0
+    state["cadence"][key] = cadence
+
+    base = state["decay_level"].get(key)
+    if type(base) is not int or base < 0 or base > 100 or base % 10:
+        base = state[key]
+    state["decay_level"][key] = base
+
+    epoch = state["decay_epoch"].get(key)
+    if type(epoch) is not int and type(epoch) is not float:
+        epoch = now
+    state["decay_epoch"][key] = epoch
 
 # Índice de la pantalla visible: 0=social, 1=coffee, 2=rest, 3=overview.
 # Solo vive en RAM: al abrir la app siempre empieza en la pantalla 1.
@@ -115,9 +150,6 @@ METRICS = (
 # 3 baterías + 1 overview
 SCREEN_COUNT = 4
 
-# Claves de `state` en el mismo orden que METRICS; para indexar con screen_index
-STATE_KEYS = ("social", "coffee", "rest")
-
 
 # -----------------------------------------------------------------------------
 # Helpers de dibujo
@@ -139,6 +171,7 @@ def center_text(text, y):
 #   dentro              10 celdas de 20x66 (se llenan según level//10)
 #   sobre la batería    etiqueta "NN%" sobre un parche del color de fondo
 #   y=162 / y=188       encabezado del mood (color) y mensaje (blanco)
+#   y=214               estado de la cadencia (MUTED)
 def draw_battery_screen(index):
     title, mood = METRICS[index]
     level = state[STATE_KEYS[index]]
@@ -183,6 +216,19 @@ def draw_battery_screen(index):
     center_text(heading, y + 102)
     screen.pen = WHITE
     center_text(message, y + 128)
+
+    # Estado de la cadencia (SELECT la cicla en esta pantalla)
+    cadence = state["cadence"][STATE_KEYS[index]]
+    if cadence:
+        hours = level // 10 * cadence / 10   # horas restantes para llegar a 0
+        if hours < 1:
+            status = "CADENCE %d/10 - EMPTY IN <1H" % cadence
+        else:
+            status = "CADENCE %d/10 - EMPTY IN %dH" % (cadence, hours)
+    else:
+        status = "CADENCE OFF"
+    screen.pen = MUTED
+    center_text(status, 214)
 
 
 # -----------------------------------------------------------------------------
@@ -278,6 +324,34 @@ def draw_overview():
 
 
 # -----------------------------------------------------------------------------
+# Cadencia: drenaje automático de las baterías
+# -----------------------------------------------------------------------------
+# La cadencia (0-10) son las HORAS que tarda la batería en llegar a 0:
+# 10 pasos de -10% en cadence*3600 s = un paso cada cadence*360 segundos.
+# 0 desactiva el drenaje. Ajustar nivel o cadencia reinicia el contador.
+#
+# El drenaje se calcula por timestamp (no por ticks), así que aplica aunque
+# la app esté cerrada. Si el RTC se pierde (power cycle) y el tiempo guardado
+# queda en el futuro, elapsed negativo no drena nada.
+def reset_decay(key):
+    """Toma el nivel actual como base y arranca de cero su contador de cadencia."""
+    state["decay_level"][key] = state[key]
+    state["decay_epoch"][key] = time.time()
+
+
+def decayed_level(key):
+    """Nivel de la batería tras aplicar el drenaje vencido de su cadencia."""
+    cadence = state["cadence"][key]
+    if cadence <= 0:
+        return state[key]
+    elapsed = time.time() - state["decay_epoch"][key]
+    if elapsed <= 0:
+        return state[key]
+    steps = int(elapsed / (cadence * 360))   # pasos de -10% ya vencidos
+    return max(0, state["decay_level"][key] - steps * 10)
+
+
+# -----------------------------------------------------------------------------
 # Bucle principal
 # -----------------------------------------------------------------------------
 # run() llama update() en cada frame. Las pulsaciones son edge-triggered:
@@ -299,9 +373,27 @@ def update():
         if up != down:
             key = STATE_KEYS[screen_index]
             level = state[key]
-            state[key] = min(100, level + 10) if up else max(0, level - 10)
-            if state[key] != level:
-                State.save("devlvls", state)  # persistir solo si cambió
+            new_level = min(100, level + 10) if up else max(0, level - 10)
+            if new_level != level:
+                state[key] = new_level
+                reset_decay(key)    # ajuste manual reinicia el contador
+                State.save("devlvls", state)
+
+    # SELECT cicla la cadencia 0 -> 1 -> ... -> 10 -> 0 de la pantalla actual.
+    # Cambiar la cadencia también reinicia su contador de tiempo.
+    if screen_index < 3:
+        if badge.pressed(BUTTON_SELECT):
+            key = STATE_KEYS[screen_index]
+            state["cadence"][key] = (state["cadence"][key] + 1) % 11
+            reset_decay(key)
+            State.save("devlvls", state)
+
+    # Aplicar el drenaje vencido de TODAS las baterías (no solo la visible)
+    for key in STATE_KEYS:
+        target = decayed_level(key)
+        if target != state[key]:
+            state[key] = target
+            State.save("devlvls", state)  # persistir solo si cambió
 
     # Redibujar la pantalla activa
     if screen_index == 3:
