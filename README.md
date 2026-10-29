@@ -6,13 +6,14 @@ into multiple meters, each with an optional auto-decay "cadence".
 
 ## Screens
 
-Four screens, cycled with **LEFT / RIGHT** (wraps around):
+Five screens, cycled with **LEFT / RIGHT** (wraps around):
 
 1. **Social Battery** — energy for chatting
 2. **Coffee Level** — caffeine meter
 3. **Rest Level** — rest meter
 4. **Overview** — the three batteries side by side as vertical bars
    (chat / coffee cup / crescent moon icons), all levels at a glance
+5. **Fork Me** — QR code linking to this repo, scan it to fork
 
 Each level uses the same 4-color band palette; at **10% or less** the lit
 cell blinks red/off on every screen.
