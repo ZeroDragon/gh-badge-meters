@@ -6,6 +6,7 @@
 #   2) COFFEE LEVEL    — nivel de cafeína
 #   3) REST LEVEL      — nivel de descanso
 #   4) OVERVIEW        — las 3 baterías verticales con su % (chat / taza / luna)
+#   5) FORK ME         — QR al repo de GitHub
 #
 # En las pantallas 1-3:
 #   UP / DOWN      ajustan el nivel en pasos de 10
@@ -43,6 +44,7 @@ FRAME = color.rgb(216, 228, 239)     # borde metálico de las baterías
 EMPTY = color.rgb(37, 49, 64)        # celdas vacías
 WHITE = color.rgb(250, 252, 255)     # texto principal
 MUTED = color.rgb(166, 183, 199)     # texto secundario
+BLACK = color.rgb(0, 0, 0)           # modulos oscuros del QR
 
 # Paleta única para las 3 baterías: un color por banda de mood
 # (0-19, 20-39, 40-69, 70-100)
@@ -148,7 +150,7 @@ METRICS = (
 )
 
 # 3 baterías + 1 overview
-SCREEN_COUNT = 4
+SCREEN_COUNT = 5  # 3 baterías + overview + fork
 
 
 # -----------------------------------------------------------------------------
@@ -367,6 +369,73 @@ def decayed_level(key):
 
 
 # -----------------------------------------------------------------------------
+# Pantalla 5: FORK IT — QR al repo de GitHub
+# -----------------------------------------------------------------------------
+# Bits pre-generados con segno (version 3, 29x29 modulos, ECC L); "1" = oscuro.
+QR_URL = "https://github.com/ZeroDragon/gh-badge-meters"
+QR_ROWS = (
+    "11111110101010001111101111111",
+    "10000010011111000010101000001",
+    "10111010111001100010001011101",
+    "10111010111011110000101011101",
+    "10111010100110111101001011101",
+    "10000010001101100011101000001",
+    "11111110101010101010101111111",
+    "00000000001010000100000000000",
+    "11110010101110001111010011101",
+    "01101101101011001001101110001",
+    "10010111111110000000110100110",
+    "11011000111001111000011010001",
+    "00000110011011110101100001100",
+    "10011100010111111100001000111",
+    "11101110000101100001101000111",
+    "00101100100100111001111110010",
+    "01111010111001010011100011010",
+    "01011000000001011000000101110",
+    "10101010011010110100101110100",
+    "00000100110100000110001110100",
+    "01100110101000111110111111100",
+    "00000000101010101110100011111",
+    "11111110000110001011101011010",
+    "10000010000101010010100011011",
+    "10111010011001110100111110101",
+    "10111010101010111001010111001",
+    "10111010110001100110100100101",
+    "10000010110110101010110101010",
+    "11111110100111010001111000010",
+)
+
+
+def draw_fork_screen():
+    """QR en tarjeta blanca + URL legible debajo."""
+    screen.pen = BACKGROUND
+    screen.rectangle(screen.clip)
+
+    screen.font = font.sins
+    screen.pen = WHITE
+    center_text("FORK IT ON GITHUB", 10, 3)
+
+    # Tarjeta blanca con zona de silencio de 2 modulos; modulos oscuros encima
+    scale = 4
+    quiet = 2
+    card = (len(QR_ROWS) + quiet * 2) * scale      # 132 px por lado
+    cx0 = (screen.width - card) // 2
+    cy0 = 64
+    screen.pen = WHITE
+    screen.rectangle(cx0, cy0, card, card)
+    screen.pen = BLACK
+    for row, bits in enumerate(QR_ROWS):
+        for col, bit in enumerate(bits):
+            if bit == "1":
+                screen.rectangle(cx0 + (col + quiet) * scale,
+                                 cy0 + (row + quiet) * scale, scale, scale)
+
+    screen.font = font.nope
+    screen.pen = MUTED
+    center_text(QR_URL.replace("https://", ""), 214)
+
+
+# -----------------------------------------------------------------------------
 # Bucle principal
 # -----------------------------------------------------------------------------
 # run() llama update() en cada frame. Las pulsaciones son edge-triggered:
@@ -413,6 +482,8 @@ def update():
     # Redibujar la pantalla activa
     if screen_index == 3:
         draw_overview()
+    elif screen_index == 4:
+        draw_fork_screen()
     else:
         draw_battery_screen(screen_index)
 
