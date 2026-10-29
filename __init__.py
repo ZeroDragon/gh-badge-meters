@@ -154,10 +154,10 @@ SCREEN_COUNT = 4
 # -----------------------------------------------------------------------------
 # Helpers de dibujo
 # -----------------------------------------------------------------------------
-def center_text(text, y):
+def center_text(text, y, size=1):
     """Texto centrado horizontalmente en toda la pantalla (320px)."""
-    width, _ = screen.measure_text(text)
-    screen.text(text, (screen.width - width) // 2, y)
+    width, _ = screen.measure_text(text, font_size=size)
+    screen.text(text, (screen.width - width) // 2, y, size)
 
 
 def low_blink_on():
@@ -173,11 +173,11 @@ def low_blink_on():
 # Layout (escala x2 del original de social_battery, que era para LORES
 # 160x120; aquí vamos en HIRES 320x240):
 #
-#   y=10                TÍTULO (ziplock)
+#   y=10                TÍTULO (ziplock, 2x)
 #   y=60..150           batería 256x90 + tapa, centrada (x=32)
 #   dentro              10 celdas de 20x66 (se llenan según level//10)
 #   sobre la batería    etiqueta "NN%" sobre un parche del color de fondo
-#   y=162 / y=188       encabezado del mood (color) y mensaje (blanco)
+#   y=155 / y=188       encabezado del mood 2x (color) y mensaje (blanco)
 #   y=214               estado de la cadencia (MUTED)
 def draw_battery_screen(index):
     title, mood = METRICS[index]
@@ -188,10 +188,10 @@ def draw_battery_screen(index):
     screen.pen = BACKGROUND
     screen.rectangle(screen.clip)
 
-    # Título de la pantalla
+    # Título de la pantalla (2x)
     screen.font = font.ziplock
     screen.pen = WHITE
-    center_text(title, 10)
+    center_text(title, 10, 2)
 
     # Cuerpo de la batería: marco exterior + tapa a la derecha + interior oscuro
     x = (screen.width - 272) // 2   # 32: deja 16px de margen por lado
@@ -221,10 +221,10 @@ def draw_battery_screen(index):
     screen.pen = WHITE
     screen.text(label, label_x, y + 28, 2)
 
-    # Encabezado del mood (color de la banda) y mensaje descriptivo (blanco)
+    # Encabezado del mood (color de la banda, 2x) y mensaje descriptivo (blanco)
     screen.font = font.nope
     screen.pen = energy
-    center_text(heading, y + 102)
+    center_text(heading, y + 95, 2)
     screen.pen = WHITE
     center_text(message, y + 128)
 
